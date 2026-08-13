@@ -220,27 +220,36 @@ def build_app() -> gr.Blocks:
         with gr.Accordion("ℹ️ Model info", open=False):
             info_md = gr.Markdown(get_model_info(DEFAULT_MODEL))
 
-        # Reference image upload (for img2img and inpainting)
-        with gr.Accordion("🖼️ Reference Image (optional)", open=False):
-            with gr.Row():
-                image_upload = gr.Image(
-                    label="Reference Image",
-                    type="filepath",
-                    visible=False,
-                )
-                mask_upload = gr.Image(
-                    label="Mask Image (for inpainting - white=change, black=keep)",
-                    type="filepath",
-                    visible=False,
-                )
-            strength_slider = gr.Slider(
-                0.0, 1.0, value=0.8, step=0.05,
-                label="Strength (how much to change the image)",
+        # Reference image upload (for img2img and inpainting) - VISIBLE BY DEFAULT
+        gr.Markdown("### 🖼️ Reference Image (for image-to-image and inpainting)")
+        gr.Markdown(
+            "*Upload an image to modify it using your prompt. For inpainting, also upload a mask (white=change, black=keep).*"
+        )
+        
+        with gr.Row():
+            image_upload = gr.Image(
+                label="Reference Image",
+                type="filepath",
                 visible=False,
-                info="Higher = more change, lower = closer to original"
+                height=300,
             )
+            mask_upload = gr.Image(
+                label="Mask Image (for inpainting)",
+                type="filepath",
+                visible=False,
+                height=300,
+                info="White areas will be changed, black areas will be kept"
+            )
+        
+        strength_slider = gr.Slider(
+            0.0, 1.0, value=0.8, step=0.05,
+            label="Strength (how much to change the image)",
+            visible=False,
+            info="Higher = more change, lower = closer to original"
+        )
 
         # Generation settings
+        gr.Markdown("### 📝 Generation Settings")
         with gr.Row():
             with gr.Column(scale=2):
                 prompt_tb = gr.Textbox(

@@ -8,7 +8,7 @@ transformers>=4.44.0
 accelerate>=0.33.0
 safetensors>=0.4.0
 
-# For Flux models and text processing
+# For Flux models
 sentencepiece>=0.2.0
 
 # GUI — Gradio 6.x

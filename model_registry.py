@@ -1,14 +1,13 @@
-"""Registry of supported open-source text-to-image models and local storage layout.
+"""Registry of supported open-source text-to-image and image-to-image models.
 
 Add new models by adding an entry to MODEL_REGISTRY:
 - repo_id: Hugging Face repo id (weights are downloaded from here)
-- kind: "sd" (Stable Diffusion), "sdxl" (SDXL), "flux" (Flux), "kandinsky" (Kandinsky),
-         "img2img" (Image-to-Image), "inpaint" (Inpainting)
-- category: "general" | "anime" | "photorealistic" | "artistic" (display grouping)
+- kind: "sd" (Stable Diffusion), "sdxl" (SDXL), "flux" (Flux), "kandinsky" (Kandinsky)
+- category: "general" | "anime" | "photorealistic" | "artistic" | "img2img" (display grouping)
 - vram_gb: rough VRAM estimate at fp16/bf16 (for the UI)
 - gated: True if the HF repo requires accepting a license + token
 - notes: short description shown in docs
-- supports: list of capabilities ["txt2img", "img2img", "inpaint"]
+- supports: List of capabilities ["txt2img"], ["txt2img", "img2img"], ["inpaint"]
 """
 import os
 from pathlib import Path
@@ -28,12 +27,12 @@ MODEL_REGISTRY = {
     },
     "SD-1.5-Inpainting": {
         "repo_id": "runwayml/stable-diffusion-inpainting",
-        "kind": "inpaint",
+        "kind": "sd",
         "category": "general",
         "vram_gb": 4.0,
         "gated": False,
         "notes": "SD 1.5 with inpainting support - edit parts of images.",
-        "supports": ["inpaint"],
+        "supports": ["txt2img", "img2img", "inpaint"],
     },
     "OpenJourney": {
         "repo_id": "prompthero/openjourney",
@@ -146,7 +145,7 @@ DEFAULT_MODEL = "SD-1.5"
 
 
 def get_model_kind(model_key: str) -> str:
-    """Return the model kind (sd, sdxl, flux, kandinsky, inpaint)."""
+    """Return the model kind (sd, sdxl, flux, kandinsky)."""
     cfg = MODEL_REGISTRY.get(model_key)
     if cfg is None:
         return "unknown"
@@ -162,7 +161,7 @@ def get_model_category(model_key: str) -> str:
 
 
 def model_supports(model_key: str, capability: str) -> bool:
-    """Check if a model supports a specific capability (txt2img, img2img, inpaint)."""
+    """Check if model supports a specific capability (txt2img, img2img, inpaint)."""
     cfg = MODEL_REGISTRY.get(model_key)
     if cfg is None:
         return False

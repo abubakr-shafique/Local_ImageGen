@@ -1,16 +1,17 @@
 """Image generation using PyTorch and Diffusers.
 
 This module handles loading text-to-image models and generating images.
-Supports Stable Diffusion, SDXL, Flux, Kandinsky, img2img, and inpainting.
+Supports Stable Diffusion, SDXL, Flux, and Kandinsky models.
+Includes text-to-image, image-to-image, and inpainting capabilities.
 """
 import gc
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from PIL import Image
 
-from model_registry import MODEL_REGISTRY, MODELS_DIR, get_model_kind, model_supports
+from model_registry import MODEL_REGISTRY, MODELS_DIR, get_model_kind
 
 # Model type to pipeline class mapping
 PIPELINE_MAP = {
@@ -18,8 +19,6 @@ PIPELINE_MAP = {
     "sdxl": "StableDiffusionXLPipeline",
     "flux": "FluxPipeline",
     "kandinsky": "KandinskyV22Pipeline",
-    "inpaint": "StableDiffusionInpaintPipeline",
-    "img2img": "StableDiffusionImg2ImgPipeline",
 }
 
 
@@ -65,27 +64,10 @@ class ImageGenerator:
         cfg = MODEL_REGISTRY[key]
         path = str(MODELS_DIR / key)
         kind = cfg["kind"]
-        supports = cfg.get("supports", ["txt2img"])
 
         try:
-            # Import appropriate pipeline based on model type and capabilities
-            if kind == "inpaint" or "inpaint" in supports:
-                from diffusers import StableDiffusionInpaintPipeline
-                self.pipeline = StableDiffusionInpaintPipeline.from_pretrained(
-                    path,
-                    torch_dtype=self.dtype,
-                    safety_checker=None,
-                    requires_safety_checker=False,
-                )
-            elif kind == "img2img" or ("img2img" in supports and "txt2img" not in supports):
-                from diffusers import StableDiffusionImg2ImgPipeline
-                self.pipeline = StableDiffusionImg2ImgPipeline.from_pretrained(
-                    path,
-                    torch_dtype=self.dtype,
-                    safety_checker=None,
-                    requires_safety_checker=False,
-                )
-            elif kind == "sd":
+            # Import appropriate pipeline
+            if kind == "sd":
                 from diffusers import StableDiffusionPipeline
                 self.pipeline = StableDiffusionPipeline.from_pretrained(
                     path,
@@ -154,10 +136,10 @@ class ImageGenerator:
         height: int = 512,
         seed: Optional[int] = None,
         image: Optional[Image.Image] = None,
+        strength: float = 0.75,
         mask_image: Optional[Image.Image] = None,
-        strength: float = 0.8,
     ) -> Tuple[List[Image.Image], str]:
-        """Generate images from a text prompt (and optionally an image).
+        """Generate images from a text prompt, optionally with a reference image.
 
         Args:
             prompt: Text description of the image to generate.
@@ -168,9 +150,9 @@ class ImageGenerator:
             width: Image width in pixels.
             height: Image height in pixels.
             seed: Random seed for reproducibility.
-            image: Optional reference image for img2img or inpainting.
-            mask_image: Optional mask for inpainting (white = change, black = keep).
-            strength: How much to transform the image (0-1, higher = more change).
+            image: Optional reference image for img2img.
+            strength: How much to transform the reference image (0-1).
+            mask_image: Optional mask for inpainting (white = edit, black = keep).
 
         Returns:
             Tuple of (list of PIL Images, status message).
@@ -196,36 +178,40 @@ class ImageGenerator:
                 height = 1024
 
         try:
-            # Prepare generation kwargs
+            # Prepare generation arguments
             gen_kwargs = {
                 "prompt": prompt,
                 "negative_prompt": negative_prompt if negative_prompt else None,
                 "num_images_per_prompt": num_images,
                 "num_inference_steps": num_inference_steps,
                 "guidance_scale": guidance_scale,
+                "width": width,
+                "height": height,
                 "generator": generator,
             }
 
-            # Handle different generation modes
-            if mask_image is not None and image is not None:
-                # Inpainting mode
-                gen_kwargs["image"] = image
-                gen_kwargs["mask_image"] = mask_image
-                gen_kwargs["strength"] = strength
-            elif image is not None:
-                # Image-to-image mode
-                gen_kwargs["image"] = image
-                gen_kwargs["strength"] = strength
-            else:
-                # Text-to-image mode
-                gen_kwargs["width"] = width
-                gen_kwargs["height"] = height
+            # Image-to-image generation
+            if image is not None and self.kind in ["sd", "sdxl", "kandinsky"]:
+                # Remove width/height for img2img (use image dimensions)
+                gen_kwargs.pop("width", None)
+                gen_kwargs.pop("height", None)
+                
+                if mask_image is not None and self.kind == "sd":
+                    # Inpainting
+                    gen_kwargs["image"] = image
+                    gen_kwargs["mask_image"] = mask_image
+                    gen_kwargs["strength"] = strength
+                else:
+                    # Standard img2img
+                    gen_kwargs["image"] = image
+                    gen_kwargs["strength"] = strength
 
             # Generate images
             result = self.pipeline(**gen_kwargs)
 
             images = result.images
-            msg = f"✅ Generated {len(images)} image(s) with **{self.current_key}**"
+            mode = "img2img" if image is not None else "txt2img"
+            msg = f"✅ Generated {len(images)} image(s) with **{self.current_key}** ({mode})"
             return images, msg
 
         except Exception as e:
@@ -254,22 +240,10 @@ class ImageGenerator:
                 "width": 512,
                 "height": 512,
             }
-        else:  # sd, inpaint, img2img
+        else:  # sd
             return {
                 "num_inference_steps": 50,
                 "guidance_scale": 7.5,
                 "width": 512,
                 "height": 512,
             }
-
-    def supports_img2img(self) -> bool:
-        """Check if current model supports image-to-image."""
-        if self.current_key is None:
-            return False
-        return model_supports(self.current_key, "img2img") or model_supports(self.current_key, "inpaint")
-
-    def supports_inpaint(self) -> bool:
-        """Check if current model supports inpainting."""
-        if self.current_key is None:
-            return False
-        return model_supports(self.current_key, "inpaint")
