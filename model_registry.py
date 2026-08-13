@@ -2,11 +2,13 @@
 
 Add new models by adding an entry to MODEL_REGISTRY:
 - repo_id: Hugging Face repo id (weights are downloaded from here)
-- kind: "sd" (Stable Diffusion), "sdxl" (SDXL), "flux" (Flux), "kandinsky" (Kandinsky)
+- kind: "sd" (Stable Diffusion), "sdxl" (SDXL), "flux" (Flux), "kandinsky" (Kandinsky),
+         "img2img" (Image-to-Image), "inpaint" (Inpainting)
 - category: "general" | "anime" | "photorealistic" | "artistic" (display grouping)
 - vram_gb: rough VRAM estimate at fp16/bf16 (for the UI)
 - gated: True if the HF repo requires accepting a license + token
 - notes: short description shown in docs
+- supports: list of capabilities ["txt2img", "img2img", "inpaint"]
 """
 import os
 from pathlib import Path
@@ -22,14 +24,16 @@ MODEL_REGISTRY = {
         "vram_gb": 4.0,
         "gated": False,
         "notes": "Classic SD 1.5 - fast, low VRAM, great for quick iterations.",
+        "supports": ["txt2img", "img2img"],
     },
     "SD-1.5-Inpainting": {
         "repo_id": "runwayml/stable-diffusion-inpainting",
-        "kind": "sd",
+        "kind": "inpaint",
         "category": "general",
         "vram_gb": 4.0,
         "gated": False,
         "notes": "SD 1.5 with inpainting support - edit parts of images.",
+        "supports": ["inpaint"],
     },
     "OpenJourney": {
         "repo_id": "prompthero/openjourney",
@@ -38,6 +42,7 @@ MODEL_REGISTRY = {
         "vram_gb": 4.0,
         "gated": False,
         "notes": "Midjourney-style fine-tuned SD 1.5 - artistic images.",
+        "supports": ["txt2img", "img2img"],
     },
     "DreamShaper": {
         "repo_id": "Lykon/DreamShaper",
@@ -46,6 +51,7 @@ MODEL_REGISTRY = {
         "vram_gb": 4.0,
         "gated": False,
         "notes": "High-quality artistic model - great for illustrations.",
+        "supports": ["txt2img", "img2img"],
     },
     "RealisticVision": {
         "repo_id": "SG161222/Realistic_Vision_V5.1_noVAE",
@@ -54,6 +60,7 @@ MODEL_REGISTRY = {
         "vram_gb": 4.0,
         "gated": False,
         "notes": "Photorealistic images - best for portraits and scenes.",
+        "supports": ["txt2img", "img2img"],
     },
     "AnythingV5": {
         "repo_id": "stablediffusionapi/anything-v5",
@@ -62,6 +69,7 @@ MODEL_REGISTRY = {
         "vram_gb": 4.0,
         "gated": False,
         "notes": "Anime-style images - excellent for anime/manga art.",
+        "supports": ["txt2img", "img2img"],
     },
     
     # ---------------- Stable Diffusion XL (high quality) ----------------
@@ -72,6 +80,7 @@ MODEL_REGISTRY = {
         "vram_gb": 8.0,
         "gated": False,
         "notes": "SDXL base - high quality 1024x1024 images, needs more VRAM.",
+        "supports": ["txt2img", "img2img"],
     },
     "SDXL-Turbo": {
         "repo_id": "stabilityai/sdxl-turbo",
@@ -80,6 +89,7 @@ MODEL_REGISTRY = {
         "vram_gb": 8.0,
         "gated": False,
         "notes": "SDXL Turbo - fast 1-step generation, good quality.",
+        "supports": ["txt2img", "img2img"],
     },
     "JuggernautXL": {
         "repo_id": "RunDiffusion/Juggernaut-XL-v9",
@@ -88,6 +98,7 @@ MODEL_REGISTRY = {
         "vram_gb": 8.0,
         "gated": False,
         "notes": "Photorealistic SDXL - stunning portraits and scenes.",
+        "supports": ["txt2img", "img2img"],
     },
     "AnimagineXL": {
         "repo_id": "cagliostrolab/animagine-xl-3.1",
@@ -96,6 +107,7 @@ MODEL_REGISTRY = {
         "vram_gb": 8.0,
         "gated": False,
         "notes": "Best anime SDXL model - high quality anime art.",
+        "supports": ["txt2img", "img2img"],
     },
     
     # ---------------- Flux (best quality, high VRAM) ----------------
@@ -106,6 +118,7 @@ MODEL_REGISTRY = {
         "vram_gb": 12.0,
         "gated": False,
         "notes": "Flux Schnell - fast 4-step generation, excellent quality.",
+        "supports": ["txt2img"],
     },
     "Flux.1-Dev": {
         "repo_id": "black-forest-labs/FLUX.1-dev",
@@ -114,6 +127,7 @@ MODEL_REGISTRY = {
         "vram_gb": 12.0,
         "gated": True,
         "notes": "Flux Dev - highest quality, needs license acceptance.",
+        "supports": ["txt2img"],
     },
     
     # ---------------- Kandinsky (alternative) ----------------
@@ -124,6 +138,7 @@ MODEL_REGISTRY = {
         "vram_gb": 6.0,
         "gated": False,
         "notes": "Kandinsky 2.2 - artistic, good for creative images.",
+        "supports": ["txt2img", "img2img"],
     },
 }
 
@@ -131,7 +146,7 @@ DEFAULT_MODEL = "SD-1.5"
 
 
 def get_model_kind(model_key: str) -> str:
-    """Return the model kind (sd, sdxl, flux, kandinsky)."""
+    """Return the model kind (sd, sdxl, flux, kandinsky, inpaint)."""
     cfg = MODEL_REGISTRY.get(model_key)
     if cfg is None:
         return "unknown"
@@ -144,3 +159,12 @@ def get_model_category(model_key: str) -> str:
     if cfg is None:
         return "unknown"
     return cfg.get("category", "unknown")
+
+
+def model_supports(model_key: str, capability: str) -> bool:
+    """Check if a model supports a specific capability (txt2img, img2img, inpaint)."""
+    cfg = MODEL_REGISTRY.get(model_key)
+    if cfg is None:
+        return False
+    supports = cfg.get("supports", ["txt2img"])
+    return capability in supports

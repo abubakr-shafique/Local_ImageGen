@@ -4,10 +4,11 @@ Run: python app.py → http://127.0.0.1:7860
 
 Features:
 - Model selection with automatic parameter adjustment.
+- Text-to-image, image-to-image, and inpainting.
 - Multiple image generation with preview.
 - Save selected images to disk.
 - Adjustable generation parameters.
-- Support for SD, SDXL, Flux, and Kandinsky models.
+- Support for SD, SDXL, Flux, Kandinsky, img2img, and inpainting models.
 """
 import datetime
 from pathlib import Path
@@ -17,7 +18,7 @@ import gradio as gr
 from PIL import Image
 
 from image_generator import ImageGenerator
-from model_registry import DEFAULT_MODEL, MODEL_REGISTRY, get_model_category
+from model_registry import DEFAULT_MODEL, MODEL_REGISTRY, model_supports
 
 generator = ImageGenerator()
 OUTPUT_DIR = Path(__file__).parent / "generated_images"
@@ -38,8 +39,9 @@ def model_status_markdown() -> str:
     for key, cfg in MODEL_REGISTRY.items():
         state = "✅ downloaded" if generator.is_downloaded(key) else "⬇️ not downloaded"
         tag = CATEGORY_LABELS.get(cfg.get("category", "general"), cfg["category"])
+        supports = " | ".join(cfg.get("supports", ["txt2img"]))
         lines.append(
-            f"- **{key}** ({tag}, ~{cfg['vram_gb']} GB VRAM) — {state}"
+            f"- **{key}** ({tag}, ~{cfg['vram_gb']} GB VRAM) — {state} [{supports}]"
         )
     return "\n".join(lines)
 
@@ -50,10 +52,11 @@ def get_model_info(model_key: str) -> str:
     if cfg is None:
         return "Unknown model"
     
-    info = f"**{key}**\n\n"
+    info = f"**{model_key}**\n\n"
     info += f"- Type: {cfg['kind']}\n"
     info += f"- Category: {cfg['category']}\n"
     info += f"- VRAM: ~{cfg['vram_gb']} GB\n"
+    info += f"- Capabilities: {', '.join(cfg.get('supports', ['txt2img']))}\n"
     info += f"- {cfg['notes']}"
     return info
 
@@ -74,28 +77,31 @@ def ui_unload_model() -> Tuple[str, str]:
 
 
 def on_model_change(model_key: str) -> Dict[str, Any]:
-    """Update UI based on selected model."""
-    # Get recommended parameters
-    params = generator.get_recommended_params() if generator.kind else {}
+    """Update UI based on selected model capabilities."""
+    # Check model capabilities
+    supports_img2img = model_supports(model_key, "img2img")
+    supports_inpaint = model_supports(model_key, "inpaint")
     
-    # Update sliders with recommended values
+    # Show/hide image upload based on capabilities
     return {
-        steps_slider: gr.update(value=params.get("num_inference_steps", 50)),
-        guidance_slider: gr.update(value=params.get("guidance_scale", 7.5)),
-        width_slider: gr.update(value=params.get("width", 512)),
-        height_slider: gr.update(value=params.get("height", 512)),
+        image_upload: gr.update(visible=supports_img2img or supports_inpaint),
+        mask_upload: gr.update(visible=supports_inpaint),
+        strength_slider: gr.update(visible=supports_img2img or supports_inpaint),
     }
 
 
 def generate_images(
     prompt: str,
     negative_prompt: str,
+    reference_image: Optional[Dict[str, Any]],
+    mask_image: Optional[Dict[str, Any]],
     num_images: int,
     num_inference_steps: int,
     guidance_scale: float,
     width: int,
     height: int,
     seed: Optional[int],
+    strength: float,
 ) -> Tuple[List[Image.Image], str]:
     """Generate images and return them with a status message."""
     if not prompt.strip():
@@ -103,6 +109,26 @@ def generate_images(
     
     if generator.pipeline is None:
         return [], "⚠️ No model is loaded. Select a model above and press **Load model**."
+    
+    # Process reference image
+    ref_image = None
+    if reference_image is not None and isinstance(reference_image, dict):
+        if "path" in reference_image:
+            try:
+                ref_image = Image.open(reference_image["path"]).convert("RGB")
+                print(f"Loaded reference image: {ref_image.size}")
+            except Exception as e:
+                print(f"Warning: Could not load reference image: {e}")
+    
+    # Process mask image
+    mask_img = None
+    if mask_image is not None and isinstance(mask_image, dict):
+        if "path" in mask_image:
+            try:
+                mask_img = Image.open(mask_image["path"]).convert("RGB")
+                print(f"Loaded mask image: {mask_img.size}")
+            except Exception as e:
+                print(f"Warning: Could not load mask image: {e}")
     
     try:
         images, msg = generator.generate(
@@ -114,6 +140,9 @@ def generate_images(
             width=width,
             height=height,
             seed=seed if seed > 0 else None,
+            image=ref_image,
+            mask_image=mask_img,
+            strength=strength,
         )
         return images, msg
     except Exception as exc:
@@ -165,7 +194,8 @@ def build_app() -> gr.Blocks:
     with gr.Blocks(title="Local Text-to-Image Generator") as demo:
         gr.Markdown(
             "# 🎨 Local Text-to-Image Generator\n"
-            "Generate images from text using open-source models — fully local, no data leaves your machine."
+            "Generate images from text using open-source models — fully local, no data leaves your machine.\n"
+            "Supports **text-to-image**, **image-to-image**, and **inpainting**."
         )
 
         # Model selection row
@@ -189,6 +219,26 @@ def build_app() -> gr.Blocks:
         # Model info accordion
         with gr.Accordion("ℹ️ Model info", open=False):
             info_md = gr.Markdown(get_model_info(DEFAULT_MODEL))
+
+        # Reference image upload (for img2img and inpainting)
+        with gr.Accordion("🖼️ Reference Image (optional)", open=False):
+            with gr.Row():
+                image_upload = gr.Image(
+                    label="Reference Image",
+                    type="filepath",
+                    visible=False,
+                )
+                mask_upload = gr.Image(
+                    label="Mask Image (for inpainting - white=change, black=keep)",
+                    type="filepath",
+                    visible=False,
+                )
+            strength_slider = gr.Slider(
+                0.0, 1.0, value=0.8, step=0.05,
+                label="Strength (how much to change the image)",
+                visible=False,
+                info="Higher = more change, lower = closer to original"
+            )
 
         # Generation settings
         with gr.Row():
@@ -269,11 +319,16 @@ def build_app() -> gr.Blocks:
             weights_md,
         )
 
-        # Update model info when selection changes
+        # Update model info and UI when selection changes
         model_dd.change(
             lambda k: get_model_info(k),
             [model_dd],
             [info_md],
+        )
+        model_dd.change(
+            on_model_change,
+            [model_dd],
+            [image_upload, mask_upload, strength_slider],
         )
 
         # Generate images
@@ -282,12 +337,15 @@ def build_app() -> gr.Blocks:
             [
                 prompt_tb,
                 negative_tb,
+                image_upload,
+                mask_upload,
                 num_images_sl,
                 steps_slider,
                 guidance_slider,
                 width_slider,
                 height_slider,
                 seed_num,
+                strength_slider,
             ],
             [gallery, status_md],
         )
