@@ -64,7 +64,7 @@ conda create --name local_imagegen python=3.10
 conda activate local_imagegen
 
 # 2. Install PyTorch with CUDA (pick the wheel matching your driver)
-pip install torch torchvision --index-url https://download.pytorch.org/whl/cu121
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu126
 
 # 3. Install the rest
 pip install -r requirements.txt
